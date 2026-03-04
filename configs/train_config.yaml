@@ -1,0 +1,62 @@
+# Training configuration — versioned for MLflow reproducibility
+# Modify this file to run new experiments; commit changes for full traceability.
+
+model:
+  # Choices: logistic_regression | random_forest | xgboost
+  name: "xgboost"
+
+  hyperparams:
+    # --- XGBoost ---
+    n_estimators: 300
+    max_depth: 6
+    learning_rate: 0.05
+    subsample: 0.8
+    colsample_bytree: 0.8
+    # scale_pos_weight is auto-computed from data when imbalance_strategy=class_weight
+    # Set manually to override: scale_pos_weight: 577
+
+    # --- RandomForest (active when model.name=random_forest) ---
+    # n_estimators: 200
+    # max_depth: 15
+    # min_samples_leaf: 4
+
+    # --- LogisticRegression (active when model.name=logistic_regression) ---
+    # C: 0.1
+    # max_iter: 1000
+    # solver: "lbfgs"
+
+data:
+  raw_path: "data/raw/creditcard.csv"
+  processed_dir: "data/processed"
+  test_size: 0.20
+  val_size: 0.10
+  random_seed: 42
+
+preprocessing:
+  # Choices: class_weight | smote | undersample
+  imbalance_strategy: "class_weight"
+  # StandardScaler applied only to Amount and Time
+  scaler: "standard"
+
+threshold:
+  # Choices: f1 | recall_at_precision_90
+  optimization_strategy: "f1"
+
+mlflow:
+  tracking_uri: "http://localhost:5000"
+  experiment_name: "fraud-detection-v1"
+  # Tag your run for easy filtering in the MLflow UI
+  tags:
+    dataset: "creditcard_uci_v1"
+    framework: "sklearn"
+
+artifacts:
+  # Local directory for figures before upload to MLflow
+  output_dir: "artifacts"
+  save_shap: true
+  shap_max_samples: 1000
+
+promotion:
+  # CI-5: new model is promoted only if pr_auc >= champion - tolerance
+  metric: "pr_auc"
+  tolerance: 0.01

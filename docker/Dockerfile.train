@@ -1,0 +1,44 @@
+# ============================================================
+# Dockerfile.train — Image d'entraînement du modèle fraud
+# CI-4  :  lancée par le pipeline GitLab pour entraîner et
+#          logguer le run dans MLflow
+# CI-6  :  image versionnée avec le hash Git + ID MLflow run
+# ============================================================
+FROM python:3.11-slim
+
+# System deps: OpenMP (required by XGBoost on Linux)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libgomp1 \
+        git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy dependency files first (layer cache optimisation)
+COPY pyproject.toml uv.lock ./
+
+# Install uv then use it to install dependencies
+RUN pip install --no-cache-dir uv \
+    && uv sync --frozen --no-dev
+
+# Copy source code
+COPY src/ ./src/
+COPY configs/ ./configs/
+
+# Create directories that may be needed at runtime
+RUN mkdir -p data/raw data/processed artifacts
+
+# Data is mounted at runtime (not baked in — keeps image small)
+# docker run -v $(pwd)/data:/app/data ...
+
+# Environment defaults (can be overridden at docker run / compose)
+ENV MLFLOW_TRACKING_URI=http://mlflow:5000
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Non-root user for security (CI security best practice)
+RUN useradd --create-home appuser
+USER appuser
+
+ENTRYPOINT ["uv", "run", "python", "-m", "src.models.train"]
+CMD ["--config", "configs/train_config.yaml"]

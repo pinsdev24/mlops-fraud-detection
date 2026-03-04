@@ -1,0 +1,32 @@
+# ============================================================
+# Dockerfile.api — Image API FastAPI pour le service /predict
+# CI-7  :  déploiement automatique de l'API de prédiction
+# Bonus : endpoint REST documenté (Swagger à /docs)
+# ============================================================
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY pyproject.toml uv.lock ./
+RUN pip install --no-cache-dir uv && uv sync --frozen --no-dev
+
+COPY src/ ./src/
+COPY api/ ./api/
+
+ENV MLFLOW_TRACKING_URI=http://mlflow:5000
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV MODEL_NAME=fraud-detector-xgboost
+ENV MODEL_STAGE=Production
+
+# Security: run as non-root
+RUN useradd --create-home appuser
+USER appuser
+
+EXPOSE 8080
+ENTRYPOINT ["uv", "run", "uvicorn", "api.main:app"]
+CMD ["--host", "0.0.0.0", "--port", "8080"]

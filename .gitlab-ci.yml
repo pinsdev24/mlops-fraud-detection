@@ -1,0 +1,235 @@
+# =============================================================================
+# .gitlab-ci.yml — Pipeline CI/CD complet MLOps Fraud Detection
+#
+# Stages :
+#   lint          : CI-2 (black + flake8)
+#   test          : CI-1 (pytest + coverage)
+#   data-quality  : CI-3 (data quality gate)
+#   train         : CI-4 (entraînement automatisé MLflow)
+#                   CI-5 (comparaison automatique des modèles)
+#   build         : CI-6 (construction image Docker versionnée)
+#   deploy        : CI-7 (déploiement API + rollback)
+#   monitor       : CI-8/CI-9 (logging + détection drift)
+# =============================================================================
+
+stages:
+  - lint
+  - test
+  - data-quality
+  - train
+  - build
+  - deploy
+  - monitor
+
+variables:
+  MLFLOW_TRACKING_URI: "http://mlflow:5000"
+  DOCKER_DRIVER: overlay2
+  IMAGE_TAG: "${CI_REGISTRY_IMAGE}/fraud-trainer:${CI_COMMIT_SHORT_SHA}"
+  IMAGE_LATEST: "${CI_REGISTRY_IMAGE}/fraud-trainer:latest"
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+# Cache pip between jobs
+cache:
+  paths:
+    - .cache/pip
+    - .venv/
+
+# Default settings for all jobs
+default:
+  image: python:3.11-slim
+  before_script:
+    - pip install uv --quiet
+    - uv sync --frozen
+
+# =============================================================================
+# STAGE: lint — CI-2
+# =============================================================================
+lint:black:
+  stage: lint
+  script:
+    - uv run black --check src/ tests/ api/
+  rules:
+    - when: always
+
+lint:flake8:
+  stage: lint
+  script:
+    - uv run flake8 src/ tests/ api/ --max-line-length=100 --extend-ignore=E203,W503
+  rules:
+    - when: always
+
+# =============================================================================
+# STAGE: test — CI-1
+# =============================================================================
+test:unit:
+  stage: test
+  script:
+    - uv run pytest tests/ -v --tb=short
+      --cov=src --cov-report=xml --cov-report=term-missing
+  coverage: '/TOTAL.*\s+(\d+%)$/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    expire_in: 1 week
+  rules:
+    - when: always
+
+# =============================================================================
+# STAGE: data-quality — CI-3
+# =============================================================================
+data:quality-gate:
+  stage: data-quality
+  script:
+    - uv run python -m src.data.quality_gate --data data/raw/creditcard.csv
+  rules:
+    - when: always
+  # Pipeline fails automatically if exit code != 0
+
+# =============================================================================
+# STAGE: train — CI-4 + CI-5
+# =============================================================================
+train:model:
+  stage: train
+  needs: [test:unit, data:quality-gate]
+  script:
+    # CI-4: entraînement déclenché par pipeline avec config versionnée
+    - |
+      MLFLOW_TRACKING_URI=$MLFLOW_TRACKING_URI \
+      uv run python -m src.models.train --config configs/train_config.yaml \
+      | tee training.log
+    # Extract run_id from output for CI-5
+    - export RUN_ID=$(grep "MLflow run_id:" training.log | tail -1 | awk '{print $NF}')
+    - echo "RUN_ID=$RUN_ID" >> train.env
+    # CI-5: comparaison automatique contre le champion
+    - |
+      uv run python -m src.models.compare \
+        --experiment fraud-detection-v1 \
+        --new-run-id $RUN_ID \
+        --metric pr_auc \
+        --tolerance 0.01
+  artifacts:
+    paths:
+      - training.log
+      - artifacts/
+    reports:
+      dotenv: train.env
+    expire_in: 1 week
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "develop"'
+
+# =============================================================================
+# STAGE: build — CI-6
+# Image versionnée avec hash Git + ID MLflow run
+# =============================================================================
+build:docker-image:
+  stage: build
+  needs: [train:model]
+  image: docker:24
+  services:
+    - docker:24-dind
+  before_script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+  script:
+    # CI-6: construction automatique d'image Docker versionnée
+    - |
+      docker build \
+        --build-arg GIT_HASH=${CI_COMMIT_SHORT_SHA} \
+        --build-arg MLFLOW_RUN_ID=${RUN_ID} \
+        --label "git.hash=${CI_COMMIT_SHORT_SHA}" \
+        --label "mlflow.run_id=${RUN_ID}" \
+        -t ${IMAGE_TAG} \
+        -t ${IMAGE_LATEST} \
+        -f docker/Dockerfile.train .
+    - docker push ${IMAGE_TAG}
+    - docker push ${IMAGE_LATEST}
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+# =============================================================================
+# STAGE: deploy — CI-7
+# Déploiement automatique de l'API + rollback possible
+# =============================================================================
+deploy:api:
+  stage: deploy
+  needs: [build:docker-image]
+  image: docker:24
+  services:
+    - docker:24-dind
+  before_script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+  script:
+    # CI-7: déploiement contrôlé avec enregistrement de l'image précédente
+    - docker pull ${IMAGE_LATEST} || true
+    - docker tag ${IMAGE_LATEST} fraud-api:rollback || true
+    - docker pull ${IMAGE_TAG}
+    - |
+      docker run -d \
+        --name fraud-api \
+        --network fraud-net \
+        -p 8080:8080 \
+        -e MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI} \
+        --restart unless-stopped \
+        ${IMAGE_TAG}
+    # Verify the API is healthy
+    - sleep 15
+    - docker exec fraud-api curl -f http://localhost:8080/health
+  environment:
+    name: production
+    url: http://localhost:8080
+    on_stop: stop:api
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+
+deploy:rollback:
+  stage: deploy
+  script:
+    # Rollback to previous image if deploy fails
+    - docker stop fraud-api || true
+    - docker rm fraud-api || true
+    - docker run -d --name fraud-api -p 8080:8080 fraud-api:rollback
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+
+stop:api:
+  stage: deploy
+  script:
+    - docker stop fraud-api || true
+    - docker rm fraud-api || true
+  environment:
+    name: production
+    action: stop
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+
+# =============================================================================
+# STAGE: monitor — CI-8 + CI-9
+# Drift detection post-déploiement
+# =============================================================================
+monitor:drift:
+  stage: monitor
+  needs: [deploy:api]
+  script:
+    # CI-9: détection de dérive — compare référence vs données récentes
+    - |
+      uv run python -m src.evaluation.drift_detector \
+        --reference data/processed/reference.parquet \
+        --current   data/processed/current.parquet \
+        --output    artifacts/drift_report.html \
+        --alert-threshold 0.20
+    # Log drift report to MLFLOW as artifact
+    - echo "Drift detection complete — check artifacts/drift_report.html"
+  artifacts:
+    paths:
+      - artifacts/drift_report.html
+    expire_in: 2 weeks
+  # Only run if drift simulation data exists
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      exists:
+        - data/processed/reference.parquet
+      when: always

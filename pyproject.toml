@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]  # makes 'src' importable as a top-level package
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.flake8]
+max-line-length = 100
+extend-ignore = ["E203", "W503"]
+exclude = [".venv", "data", "notebooks", "artifacts"]
+
+[project]
+name = "projet-spe"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "black>=26.1.0",
+    "evidently>=0.7.20",
+    "fastapi>=0.135.1",
+    "flake8>=7.3.0",
+    "great-expectations>=1.13.1",
+    "hatchling>=1.29.0",
+    "imbalanced-learn>=0.14.1",
+    "mlflow>=3.10.0",
+    "pandas>=2.3.3",
+    "pytest>=9.0.2",
+    "scikit-learn>=1.8.0",
+    "seaborn>=0.13.2",
+    "shap>=0.51.0",
+    "uvicorn>=0.41.0",
+    "xgboost>=3.2.0",
+]

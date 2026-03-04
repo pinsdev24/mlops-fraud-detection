@@ -1,0 +1,112 @@
+# =============================================================================
+# docker-compose.yml — Orchestration complète du projet MLOps
+#
+# Services :
+#   mlflow    : serveur de tracking MLflow (UI sur http://localhost:5000)
+#   training  : entraînement du modèle (CI-4) — s'arrête après le run
+#   api       : service de prédiction FastAPI /predict (CI-7, bonus)
+#
+# Commandes rapides (voir README pour le détail complet) :
+#   docker compose up mlflow -d                  # Démarrer MLflow seulement
+#   docker compose run --rm training             # Lancer un entraînement
+#   docker compose up api -d                     # Démarrer l'API de prédiction
+#   docker compose up                            # Tout démarrer
+# =============================================================================
+
+version: "3.9"
+
+# Réseau interne isolé (CI sécuritaire)
+networks:
+  fraud-net:
+    driver: bridge
+
+volumes:
+  mlflow-data: # données MLflow persistées entre les runs
+  mlflow-artifacts:
+    # artefacts (modèles, figures, rapports)
+
+services:
+  # ---------------------------------------------------------------------------
+  # MLflow Tracking Server
+  # UI accessible sur http://localhost:5000
+  # ---------------------------------------------------------------------------
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.20.2
+    container_name: mlflow-server
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow-data:/mlflow/data
+      - mlflow-artifacts:/mlflow/artifacts
+    command: >
+      mlflow server
+        --host 0.0.0.0
+        --port 5000
+        --backend-store-uri sqlite:////mlflow/data/mlflow.db
+        --default-artifact-root /mlflow/artifacts
+    networks:
+      - fraud-net
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:5000/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Training Service — CI-4
+  # Short-lived container: runs training, logs to MLflow, then exits.
+  # ---------------------------------------------------------------------------
+  training:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.train
+    container_name: fraud-training
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # Mount local data and config (not baked into the image)
+      - ../data:/app/data:ro
+      - ../configs:/app/configs:ro
+      - ../artifacts:/app/artifacts
+    networks:
+      - fraud-net
+    command: [ "--config", "configs/train_config.yaml" ]
+    # This service exits after training — use "docker compose run training"
+
+    # ---------------------------------------------------------------------------
+    # Prediction API Service — CI-7 (bonus)
+    # FastAPI endpoint : POST /predict
+    # Docs            : http://localhost:8080/docs
+    # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    container_name: fraud-api
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - MODEL_NAME=fraud-detector-xgboost
+      - MODEL_STAGE=Production
+      - API_SECRET_KEY=${API_SECRET_KEY:-changeme-in-production}
+    networks:
+      - fraud-net
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/health" ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    profiles:
+      - api # Only started with: docker compose --profile api up
