@@ -71,7 +71,7 @@ services:
       - PYTHONUNBUFFERED=1
     volumes:
       # Mount local data and config (not baked into the image)
-      - ../data:/app/data:ro
+      - ../data:/app/data
       - ../configs:/app/configs:ro
       - ../artifacts:/app/artifacts
     networks:

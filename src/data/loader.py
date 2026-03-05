@@ -35,7 +35,21 @@ def load_raw_data(path: str | Path) -> pd.DataFrame:
     """
     path = Path(path)
     if not path.exists():
-        raise FileNotFoundError(f"Dataset not found: {path}")
+        logger.warning("Dataset not found at %s. Attempting to download...", path)
+        import subprocess
+        project_root = Path(__file__).resolve().parent.parent.parent
+        script_path = project_root / "download_data.sh"
+        
+        if script_path.exists():
+            try:
+                subprocess.run(["bash", str(script_path)], cwd=project_root, check=True)
+            except subprocess.CalledProcessError as e:
+                raise RuntimeError(f"Error downloading dataset: {e}")
+        else:
+            raise FileNotFoundError(f"Dataset not found and {script_path} is missing.")
+            
+        if not path.exists():
+            raise FileNotFoundError(f"Dataset not found even after running download_data.sh: {path}")
 
     logger.info("Loading dataset from %s ...", path)
     df = pd.read_csv(path)
