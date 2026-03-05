@@ -14,3 +14,4 @@ wheels/
 data/raw/creditcard.csv
 data/raw/*.zip
 docs/
+mlruns/
