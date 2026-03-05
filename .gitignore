@@ -13,3 +13,4 @@ wheels/
 .pytest_cache
 data/raw/creditcard.csv
 data/raw/*.zip
+docs/
