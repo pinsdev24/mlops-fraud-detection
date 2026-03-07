@@ -278,10 +278,14 @@ jobs:
             -p 8080:8080 \
             -e MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI} \
             -e API_SECRET_KEY=${API_SECRET_KEY} \
-            --restart unless-stopped \
             ghcr.io/${{ github.repository }}/fraud-api:${{ github.sha }}
-          sleep 15
-          docker exec fraud-api curl -f http://localhost:8080/health
+          echo "Waiting for container to start..."
+          sleep 20
+          # Show container status and logs for debugging
+          docker ps -a --filter name=fraud-api
+          docker logs fraud-api
+          # Health check from the runner (port is mapped to host)
+          curl -f http://localhost:8080/health || (echo "Health check failed" && docker logs fraud-api && exit 1)
 
   # ===========================================================================
   # CI-8/CI-9 : Détection de drift (si données processsed disponibles)
