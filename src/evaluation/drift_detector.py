@@ -33,13 +33,14 @@ from src.data.loader import AMOUNT_COL
 logger = logging.getLogger(__name__)
 
 # Drift alert thresholds
-DRIFT_SHARE_ALERT = 0.20       # >20% drifted features triggers alert
+DRIFT_SHARE_ALERT = 0.20  # >20% drifted features triggers alert
 DATASET_DRIFT_THRESHOLD = 0.05  # p-value threshold for each feature
 
 
 # ---------------------------------------------------------------------------
 # Core drift detection
 # ---------------------------------------------------------------------------
+
 
 def detect_drift(
     reference_df: pd.DataFrame,
@@ -70,7 +71,8 @@ def detect_drift(
 
     # Select numeric columns present in both DataFrames
     common_cols = [
-        c for c in reference_df.columns
+        c
+        for c in reference_df.columns
         if c in current_df.columns and pd.api.types.is_numeric_dtype(reference_df[c])
     ]
 
@@ -122,6 +124,7 @@ def detect_drift(
 # ---------------------------------------------------------------------------
 # Drift simulation (from project spec)
 # ---------------------------------------------------------------------------
+
 
 def simulate_data_drift(df: pd.DataFrame, seed: int = 42) -> pd.DataFrame:
     """Inject synthetic data drift as specified in the project brief.
@@ -200,15 +203,14 @@ def run_drift_monitoring(
 
     reference_df = _load(reference_path)
     current_df = _load(current_path)
-    logger.info(
-        "Loaded reference=%d rows, current=%d rows", len(reference_df), len(current_df)
-    )
+    logger.info("Loaded reference=%d rows, current=%d rows", len(reference_df), len(current_df))
     return detect_drift(reference_df, current_df, output_path=output_path)
 
 
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="CI-9 Drift Detector")
@@ -231,5 +233,5 @@ if __name__ == "__main__":
     drift_share = results.get("drift_share", 0.0) or 0.0
     if drift_share > args.alert_threshold:
         logger.warning("🚨 Drift alert: %.1f%% features drifted", drift_share * 100)
-        sys.exit(2)   # Exit 2 = drift alert (not a code error)
+        sys.exit(2)  # Exit 2 = drift alert (not a code error)
     sys.exit(0)

@@ -12,8 +12,7 @@
 git clone <URL_DU_DEPOT> && cd mlops-fraud-detection
 
 # 2. Télécharger le dataset
-#    Placer creditcard.csv dans data/raw/
-#    Source: https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud
+./download_data.sh
 
 # 3. Démarrer MLflow (UI sur http://localhost:5000)
 docker compose -f docker/docker-compose.yml up mlflow -d

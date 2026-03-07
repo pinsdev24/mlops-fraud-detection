@@ -11,3 +11,7 @@ wheels/
 
 .DS_Store
 .pytest_cache
+data/raw/creditcard.csv
+data/raw/*.zip
+docs/
+mlruns/

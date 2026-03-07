@@ -38,8 +38,10 @@ cache:
 default:
   image: python:3.11-slim
   before_script:
+    - apt-get update -yqq && apt-get install -yqq curl unzip > /dev/null
     - pip install uv --quiet
     - uv sync --frozen
+    - chmod +x download_data.sh && ./download_data.sh
 
 # =============================================================================
 # STAGE: lint — CI-2
