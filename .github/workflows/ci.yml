@@ -228,6 +228,19 @@ jobs:
             git.hash=${{ github.sha }}
             git.branch=${{ github.ref_name }}
 
+      - name: Build and push API image (CI-6)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile.api
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/fraud-api:${{ github.sha }}
+            ghcr.io/${{ github.repository }}/fraud-api:latest
+          labels: |
+            git.hash=${{ github.sha }}
+            git.branch=${{ github.ref_name }}
+
   # ===========================================================================
   # CI-7 : Déploiement API — déclenchement MANUEL uniquement
   # ===========================================================================
@@ -257,7 +270,7 @@ jobs:
           API_SECRET_KEY: ${{ secrets.API_SECRET_KEY }}
           MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
         run: |
-          docker pull ghcr.io/${{ github.repository }}/fraud-trainer:${{ github.sha }}
+          docker pull ghcr.io/${{ github.repository }}/fraud-api:${{ github.sha }}
           docker stop fraud-api || true
           docker rm fraud-api || true
           docker run -d \
@@ -266,7 +279,7 @@ jobs:
             -e MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI} \
             -e API_SECRET_KEY=${API_SECRET_KEY} \
             --restart unless-stopped \
-            ghcr.io/${{ github.repository }}/fraud-trainer:${{ github.sha }}
+            ghcr.io/${{ github.repository }}/fraud-api:${{ github.sha }}
           sleep 15
           docker exec fraud-api curl -f http://localhost:8080/health
 
