@@ -66,8 +66,7 @@ def plot_pr_curve(
         # Baseline (random classifier)
         baseline = y_true.mean()
         ax.axhline(
-            baseline, color="grey", linestyle="--", alpha=0.7,
-            label=f"Baseline ({baseline:.4f})"
+            baseline, color="grey", linestyle="--", alpha=0.7, label=f"Baseline ({baseline:.4f})"
         )
         ax.legend()
     return _save(fig, Path(output_path))
@@ -82,9 +81,7 @@ def plot_roc_curve(
     """Plot and save the ROC curve."""
     with plt.style.context(STYLE):
         fig, ax = plt.subplots(figsize=(7, 5))
-        RocCurveDisplay.from_predictions(
-            y_true, y_proba, ax=ax, name=f"Model (AUC={roc_auc:.4f})"
-        )
+        RocCurveDisplay.from_predictions(y_true, y_proba, ax=ax, name=f"Model (AUC={roc_auc:.4f})")
         ax.plot([0, 1], [0, 1], "k--", alpha=0.5, label="Random classifier")
         ax.set_title("ROC Curve", fontsize=14, fontweight="bold")
         ax.legend(loc="lower right")

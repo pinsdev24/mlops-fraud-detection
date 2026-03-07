@@ -29,12 +29,12 @@ CRITICAL_COLUMNS = [TARGET_COL, AMOUNT_COL] + PCA_FEATURES
 class QualityConfig:
     """Thresholds for each quality rule."""
 
-    max_missing_rate: float = 0.05          # CI-3 mandatory rule
-    min_rows: int = 100_000                  # sanity check on volume
-    max_amount: float = 100_000.0           # outlier cap for Amount
-    fraud_rate_min: float = 0.001           # expected class distribution
+    max_missing_rate: float = 0.05  # CI-3 mandatory rule
+    min_rows: int = 100_000  # sanity check on volume
+    max_amount: float = 100_000.0  # outlier cap for Amount
+    fraud_rate_min: float = 0.001  # expected class distribution
     fraud_rate_max: float = 0.005
-    max_duplicate_rate: float = 0.01        # tolerate up to 1% exact duplicates
+    max_duplicate_rate: float = 0.01  # tolerate up to 1% exact duplicates
 
 
 @dataclass
@@ -121,9 +121,7 @@ class DataQualityGate:
                     f"(threshold: {self.config.max_missing_rate:.0%})."
                 )
             elif missing_rate > 0:
-                report.add_warning(
-                    f"Column '{col}' has {missing_rate:.2%} missing values."
-                )
+                report.add_warning(f"Column '{col}' has {missing_rate:.2%} missing values.")
 
     def _check_duplicates(self, df: pd.DataFrame, report: QualityReport) -> None:
         dup_rate = df.duplicated().mean()
@@ -165,9 +163,7 @@ class DataQualityGate:
                 continue
             neg_count = (df[col] < 0).sum()
             if neg_count > 0:
-                report.add_violation(
-                    f"Column '{col}' contains {neg_count} negative value(s)."
-                )
+                report.add_violation(f"Column '{col}' contains {neg_count} negative value(s).")
 
 
 def run_quality_gate(data_path: str | Path) -> QualityReport:
@@ -180,6 +176,7 @@ def run_quality_gate(data_path: str | Path) -> QualityReport:
 # ---------------------------------------------------------------------------
 # CLI entry point (called directly by GitLab CI step CI-3)
 # ---------------------------------------------------------------------------
+
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="CI-3 Data Quality Gate")

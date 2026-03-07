@@ -11,10 +11,10 @@ from src.data.loader import (
 )
 from src.data.quality_gate import DataQualityGate, QualityConfig
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="module")
 def sample_df():
@@ -24,7 +24,7 @@ def sample_df():
     rng = np.random.default_rng(42)
     n = 1000
     data = {f"V{i}": rng.standard_normal(n) for i in range(1, 29)}
-    data["Time"] = rng.uniform(0, 172800, n)   # 2 days in seconds
+    data["Time"] = rng.uniform(0, 172800, n)  # 2 days in seconds
     data["Amount"] = rng.exponential(scale=100, size=n)
     data["Class"] = (rng.random(n) < 0.002).astype(int)  # ~0.2% fraud
     return pd.DataFrame(data)
@@ -43,6 +43,7 @@ def strict_config():
 # ---------------------------------------------------------------------------
 # Tests — loader
 # ---------------------------------------------------------------------------
+
 
 class TestLoader:
     def test_feature_names_count(self):
@@ -72,6 +73,7 @@ class TestLoader:
 # ---------------------------------------------------------------------------
 # Tests — quality gate
 # ---------------------------------------------------------------------------
+
 
 class TestDataQualityGate:
     def test_passes_on_clean_data(self, sample_df, strict_config):
