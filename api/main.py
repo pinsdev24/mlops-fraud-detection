@@ -15,7 +15,7 @@ from pathlib import Path
 
 import mlflow
 import mlflow.sklearn
-import numpy as np
+import pandas as pd
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -43,7 +43,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],       # Restrict in production
+    allow_origins=["*"],  # Restrict in production
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
@@ -101,6 +101,7 @@ async def load_model():
 # Routes
 # ---------------------------------------------------------------------------
 
+
 @app.get("/health", tags=["ops"])
 async def health():
     """Docker healthcheck endpoint."""
@@ -134,20 +135,24 @@ async def predict(request: Request, payload: PredictRequest):
         raise HTTPException(status_code=503, detail="Model not loaded. Try again later.")
 
     try:
-        # Convert input to numpy array
-        features = np.array([list(t.dict().values()) for t in payload.transactions])
+        # Convert input to DataFrame with proper column names
+        # (required by the ColumnTransformer which selects Amount/Time by name)
+        records = [t.dict() for t in payload.transactions]
+        features = pd.DataFrame(records)
         probas = _model.predict_proba(features)[:, 1]
         threshold = payload.threshold or DEFAULT_THRESHOLD
         predictions = (probas >= threshold).astype(int).tolist()
 
         results = []
         for i, (proba, pred) in enumerate(zip(probas.tolist(), predictions)):
-            results.append({
-                "transaction_index": i,
-                "fraud_probability": round(proba, 6),
-                "is_fraud": bool(pred),
-                "threshold_used": threshold,
-            })
+            results.append(
+                {
+                    "transaction_index": i,
+                    "fraud_probability": round(proba, 6),
+                    "is_fraud": bool(pred),
+                    "threshold_used": threshold,
+                }
+            )
 
         # CI-8 — Log each prediction for post-hoc analysis
         request_id = str(uuid.uuid4())
@@ -163,6 +168,7 @@ async def predict(request: Request, payload: PredictRequest):
         }
         with open(PRED_LOG_PATH, "a") as f:
             import json
+
             f.write(json.dumps(log_entry) + "\n")
 
         logger.info(

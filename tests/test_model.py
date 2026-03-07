@@ -15,10 +15,10 @@ from xgboost import XGBClassifier
 from src.models.train import build_model, load_config
 from src.models.compare import should_promote, get_champion_run, compare_all_runs
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="module")
 def sample_Xy():
@@ -26,7 +26,7 @@ def sample_Xy():
     rng = np.random.default_rng(42)
     n = 1000
     X = rng.standard_normal((n, 30))
-    y = (rng.random(n) < 0.05).astype(int)   # 5% fraud to ensure enough positives
+    y = (rng.random(n) < 0.05).astype(int)  # 5% fraud to ensure enough positives
     return X, y
 
 
@@ -36,19 +36,23 @@ def mlflow_tmp(tmp_path):
     tracking_uri = f"file://{tmp_path}/mlruns"
     mlflow.set_tracking_uri(tracking_uri)
     yield tracking_uri
-    mlflow.set_tracking_uri("http://localhost:5000")   # reset to default
+    mlflow.set_tracking_uri("http://localhost:5000")  # reset to default
 
 
 # ---------------------------------------------------------------------------
 # Tests — build_model
 # ---------------------------------------------------------------------------
 
+
 class TestBuildModel:
-    @pytest.mark.parametrize("model_name,clf_class", [
-        ("logistic_regression", LogisticRegression),
-        ("random_forest", RandomForestClassifier),
-        ("xgboost", XGBClassifier),
-    ])
+    @pytest.mark.parametrize(
+        "model_name,clf_class",
+        [
+            ("logistic_regression", LogisticRegression),
+            ("random_forest", RandomForestClassifier),
+            ("xgboost", XGBClassifier),
+        ],
+    )
     def test_returns_correct_classifier_type(self, model_name, clf_class):
         clf, params = build_model(
             model_name=model_name,
@@ -80,9 +84,7 @@ class TestBuildModel:
         assert params["n_estimators"] == 10
 
     def test_random_state_is_set(self):
-        clf, params = build_model(
-            "logistic_regression", {}, "class_weight", random_state=99
-        )
+        clf, params = build_model("logistic_regression", {}, "class_weight", random_state=99)
         assert clf.random_state == 99
 
     def test_model_fits_on_synthetic_data(self, sample_Xy):
@@ -97,6 +99,7 @@ class TestBuildModel:
 # ---------------------------------------------------------------------------
 # Tests — CI-5 comparison (compare.py)
 # ---------------------------------------------------------------------------
+
 
 class TestModelComparison:
     """Test should_promote using a local MLflow tracking store."""
@@ -161,6 +164,7 @@ class TestModelComparison:
 # ---------------------------------------------------------------------------
 # Tests — load_config
 # ---------------------------------------------------------------------------
+
 
 class TestLoadConfig:
     def test_load_valid_yaml(self, tmp_path):

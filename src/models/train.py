@@ -74,6 +74,7 @@ logger = logging.getLogger(__name__)
 # Config helpers
 # ---------------------------------------------------------------------------
 
+
 def load_config(path: str | Path) -> dict:
     """Load YAML config file."""
     with open(path) as f:
@@ -94,6 +95,7 @@ def _deep_get(d: dict, *keys, default=None):
 # ---------------------------------------------------------------------------
 # Model factory
 # ---------------------------------------------------------------------------
+
 
 def build_model(
     model_name: str,
@@ -145,9 +147,7 @@ def build_model(
             "learning_rate": hyperparams.get("learning_rate", 0.05),
             "subsample": hyperparams.get("subsample", 0.8),
             "colsample_bytree": hyperparams.get("colsample_bytree", 0.8),
-            "scale_pos_weight": (
-                scale_pos_weight if imbalance_strategy == "class_weight" else 1.0
-            ),
+            "scale_pos_weight": (scale_pos_weight if imbalance_strategy == "class_weight" else 1.0),
             "eval_metric": "aucpr",
             "random_state": random_state,
             "n_jobs": -1,
@@ -167,6 +167,7 @@ def build_model(
 # ---------------------------------------------------------------------------
 # Full training pipeline
 # ---------------------------------------------------------------------------
+
 
 def train_pipeline(config: dict) -> str:
     """Run the end-to-end training pipeline and return the MLflow run_id.
@@ -195,9 +196,7 @@ def train_pipeline(config: dict) -> str:
     imbalance_strategy = _deep_get(
         config, "preprocessing", "imbalance_strategy", default="class_weight"
     )
-    threshold_strategy = _deep_get(
-        config, "threshold", "optimization_strategy", default="f1"
-    )
+    threshold_strategy = _deep_get(config, "threshold", "optimization_strategy", default="f1")
     artifacts_dir = Path(_deep_get(config, "artifacts", "output_dir", default="artifacts"))
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
@@ -272,19 +271,21 @@ def train_pipeline(config: dict) -> str:
         logger.info("MLflow run_id: %s", run_id)
 
         # --- Log all config params ---
-        mlflow.log_params({
-            "model_name": model_name,
-            "imbalance_strategy": imbalance_strategy,
-            "threshold_strategy": threshold_strategy,
-            "random_seed": random_seed,
-            "test_size": _deep_get(config, "data", "test_size", default=0.20),
-            "val_size": _deep_get(config, "data", "val_size", default=0.10),
-            "train_samples": len(X_train_final),
-            "val_samples": len(X_val),
-            "test_samples": len(X_test),
-            "fraud_rate_train": float(y_train.mean()),
-            "n_features": len(get_feature_names()),
-        })
+        mlflow.log_params(
+            {
+                "model_name": model_name,
+                "imbalance_strategy": imbalance_strategy,
+                "threshold_strategy": threshold_strategy,
+                "random_seed": random_seed,
+                "test_size": _deep_get(config, "data", "test_size", default=0.20),
+                "val_size": _deep_get(config, "data", "val_size", default=0.10),
+                "train_samples": len(X_train_final),
+                "val_samples": len(X_val),
+                "test_samples": len(X_test),
+                "fraud_rate_train": float(y_train.mean()),
+                "n_features": len(get_feature_names()),
+            }
+        )
         mlflow.log_params({f"clf_{k}": v for k, v in clf_params.items()})
 
         # --- Train ---
@@ -302,15 +303,11 @@ def train_pipeline(config: dict) -> str:
         y_test_proba = clf.predict_proba(X_test_scaled)[:, 1]
         y_test_pred = (y_test_proba >= optimal_threshold).astype(int)
 
-        test_metrics = compute_all_metrics(
-            y_test.values, y_test_proba, threshold=optimal_threshold
-        )
+        test_metrics = compute_all_metrics(y_test.values, y_test_proba, threshold=optimal_threshold)
         mlflow.log_metrics(test_metrics)
 
         # Also log val metrics to detect overfitting
-        val_metrics = compute_all_metrics(
-            y_val.values, y_val_proba, threshold=optimal_threshold
-        )
+        val_metrics = compute_all_metrics(y_val.values, y_val_proba, threshold=optimal_threshold)
         mlflow.log_metrics({f"val_{k}": v for k, v in val_metrics.items()})
 
         # --- Save classification report as artefact ---
@@ -327,22 +324,23 @@ def train_pipeline(config: dict) -> str:
         plot_paths = []
 
         cm_path = plot_confusion_matrix(
-            y_test.values, y_test_pred,
-            output_path=artifacts_dir / "confusion_matrix.png"
+            y_test.values, y_test_pred, output_path=artifacts_dir / "confusion_matrix.png"
         )
         plot_paths.append(cm_path)
 
         pr_path = plot_pr_curve(
-            y_test.values, y_test_proba,
+            y_test.values,
+            y_test_proba,
             pr_auc=test_metrics["pr_auc"],
-            output_path=artifacts_dir / "pr_curve.png"
+            output_path=artifacts_dir / "pr_curve.png",
         )
         plot_paths.append(pr_path)
 
         roc_path = plot_roc_curve(
-            y_test.values, y_test_proba,
+            y_test.values,
+            y_test_proba,
             roc_auc=test_metrics["roc_auc"],
-            output_path=artifacts_dir / "roc_curve.png"
+            output_path=artifacts_dir / "roc_curve.png",
         )
         plot_paths.append(roc_path)
 
@@ -351,8 +349,11 @@ def train_pipeline(config: dict) -> str:
             y_test.values, y_test_proba
         )
         thresh_path = plot_threshold_analysis(
-            precisions_arr, recalls_arr, thresholds_arr, optimal_threshold,
-            output_path=artifacts_dir / "threshold_analysis.png"
+            precisions_arr,
+            recalls_arr,
+            thresholds_arr,
+            optimal_threshold,
+            output_path=artifacts_dir / "threshold_analysis.png",
         )
         plot_paths.append(thresh_path)
 
@@ -361,7 +362,7 @@ def train_pipeline(config: dict) -> str:
             fi_path = plot_feature_importance(
                 clf.feature_importances_,
                 feature_names,
-                output_path=artifacts_dir / "feature_importance.png"
+                output_path=artifacts_dir / "feature_importance.png",
             )
             plot_paths.append(fi_path)
 
@@ -370,9 +371,8 @@ def train_pipeline(config: dict) -> str:
         if save_shap:
             try:
                 import shap
-                shap_samples = _deep_get(
-                    config, "artifacts", "shap_max_samples", default=1000
-                )
+
+                shap_samples = _deep_get(config, "artifacts", "shap_max_samples", default=1000)
                 X_shap = X_test_scaled[:shap_samples]
                 if model_name == "xgboost":
                     explainer = shap.TreeExplainer(clf)
@@ -380,8 +380,7 @@ def train_pipeline(config: dict) -> str:
                     explainer = shap.Explainer(clf, X_train_scaled[:500])
                 shap_vals = explainer.shap_values(X_shap)
                 shap_path = plot_shap_summary(
-                    shap_vals, X_shap, feature_names,
-                    output_path=artifacts_dir / "shap_summary.png"
+                    shap_vals, X_shap, feature_names, output_path=artifacts_dir / "shap_summary.png"
                 )
                 if shap_path:
                     plot_paths.append(shap_path)
@@ -395,19 +394,19 @@ def train_pipeline(config: dict) -> str:
 
         # --- Log the trained model (MLflow Model format) ---
         # Build a full sklearn Pipeline (preprocessor + classifier) for inference
-        inference_pipeline = Pipeline([
-            ("preprocessor", preprocessor),
-            ("classifier", clf),
-        ])
+        inference_pipeline = Pipeline(
+            [
+                ("preprocessor", preprocessor),
+                ("classifier", clf),
+            ]
+        )
         mlflow.sklearn.log_model(
             sk_model=inference_pipeline,
             artifact_path="model",
             registered_model_name=f"fraud-detector-{model_name}",
             input_example=X_test.head(5),
         )
-        logger.info(
-            "Model registered: fraud-detector-%s | run_id: %s", model_name, run_id
-        )
+        logger.info("Model registered: fraud-detector-%s | run_id: %s", model_name, run_id)
 
         # --- CI-5: Compare against champion ---
         promotion_cfg = _deep_get(config, "promotion", default={}) or {}
@@ -449,6 +448,7 @@ def train_pipeline(config: dict) -> str:
 # ---------------------------------------------------------------------------
 # CLI entry point (CI-4 — triggered by GitLab pipeline)
 # ---------------------------------------------------------------------------
+
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(

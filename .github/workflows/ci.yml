@@ -1,0 +1,319 @@
+# =============================================================================
+# .github/workflows/ci.yml — Pipeline CI/CD MLOps Fraud Detection
+#
+# Équivalent GitHub Actions du .gitlab-ci.yml
+#
+# Jobs :
+#   lint          : CI-2 (black + flake8)
+#   test          : CI-1 (pytest + coverage)
+#   data-quality  : CI-3 (data quality gate)
+#   train         : CI-4 + CI-5 (entraînement MLflow + comparaison champion)
+#   build         : CI-6 (image Docker versionnée)
+#   deploy        : CI-7 (déploiement API — manuel)
+#   monitor       : CI-8/CI-9 (drift detection)
+# =============================================================================
+
+name: MLOps CI/CD
+
+on:
+  push:
+    branches: [main, develop, "feature/**", "data/**"]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:  # Déclenchement manuel depuis l'UI GitHub
+
+env:
+  PYTHON_VERSION: "3.11"
+  MLFLOW_TRACKING_URI: "http://localhost:5000"
+
+# ---------------------------------------------------------------------------
+# Job partagé : setup Python + dépendances
+# Chaque job le recrée (GitHub Actions ne partage pas l'env entre jobs)
+# ---------------------------------------------------------------------------
+
+jobs:
+
+  # ===========================================================================
+  # CI-2 : Lint — black + flake8
+  # ===========================================================================
+  lint:
+    name: "CI-2 · Lint (black + flake8)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        run: pip install uv --quiet
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: black check
+        run: uv run black --check src/ tests/ api/
+
+      - name: flake8 check
+        run: uv run flake8 src/ tests/ api/ --max-line-length=100 --extend-ignore=E203,W503
+
+  # ===========================================================================
+  # CI-1 : Tests — pytest + coverage
+  # ===========================================================================
+  test:
+    name: "CI-1 · Tests (pytest + coverage)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        run: pip install uv --quiet
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Download dataset
+        run: chmod +x download_data.sh && ./download_data.sh
+
+      - name: Run tests
+        run: |
+          uv run pytest tests/ -v --tb=short \
+            --cov=src --cov-report=xml --cov-report=term-missing
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+          retention-days: 7
+
+      - name: Coverage summary (GitHub UI)
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+        continue-on-error: true  # Ne bloque pas le pipeline si codecov indisponible
+
+  # ===========================================================================
+  # CI-3 : Data Quality Gate
+  # ===========================================================================
+  data-quality:
+    name: "CI-3 · Data Quality Gate"
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        run: pip install uv --quiet
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Download dataset
+        run: chmod +x download_data.sh && ./download_data.sh
+
+      - name: Run quality gate
+        run: uv run python -m src.data.quality_gate --data data/raw/creditcard.csv
+        # Exit code 1 si > 5% valeurs manquantes ou schéma invalide → pipeline échoue
+
+  # ===========================================================================
+  # CI-4 + CI-5 : Entraînement + Comparaison champion
+  # Déclenché uniquement sur main et develop
+  # ===========================================================================
+  train:
+    name: "CI-4/5 · Train + Champion Comparison"
+    runs-on: ubuntu-latest
+    needs: [lint, test, data-quality]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        run: pip install uv --quiet
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Download dataset
+        run: chmod +x download_data.sh && ./download_data.sh
+
+      - name: Start MLflow (SQLite backend)
+        run: |
+          uv run mlflow server \
+            --host 0.0.0.0 --port 5000 \
+            --backend-store-uri sqlite:///mlruns/mlflow.db \
+            --default-artifact-root ./mlruns/artifacts &
+          sleep 5  # Attendre que MLflow démarre
+
+      - name: Train model (CI-4)
+        run: |
+          MLFLOW_TRACKING_URI=http://localhost:5000 \
+          uv run python -m src.models.train --config configs/train_config.yaml \
+          | tee training.log
+
+      - name: Extract run_id
+        id: extract_run
+        run: |
+          RUN_ID=$(grep "MLflow run_id:" training.log | tail -1 | awk '{print $NF}')
+          echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+          echo "Run ID: $RUN_ID"
+
+      - name: Compare against champion (CI-5)
+        run: |
+          MLFLOW_TRACKING_URI=http://localhost:5000 \
+          uv run python -m src.models.compare \
+            --experiment fraud-detection-v1 \
+            --new-run-id ${{ steps.extract_run.outputs.run_id }} \
+            --metric pr_auc \
+            --tolerance 0.01
+
+      - name: Upload training artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: training-artifacts-${{ github.sha }}
+          path: |
+            training.log
+            artifacts/
+            mlruns/
+          retention-days: 30
+
+  # ===========================================================================
+  # CI-6 : Build image Docker versionnée
+  # Déclenché uniquement sur main
+  # ===========================================================================
+  build:
+    name: "CI-6 · Build Docker Image"
+    runs-on: ubuntu-latest
+    needs: [train]
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write  # Pour pousser sur ghcr.io
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push training image (CI-6)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile.train
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/fraud-trainer:${{ github.sha }}
+            ghcr.io/${{ github.repository }}/fraud-trainer:latest
+          build-args: |
+            GIT_HASH=${{ github.sha }}
+          labels: |
+            git.hash=${{ github.sha }}
+            git.branch=${{ github.ref_name }}
+
+  # ===========================================================================
+  # CI-7 : Déploiement API — déclenchement MANUEL uniquement
+  # ===========================================================================
+  deploy:
+    name: "CI-7 · Deploy API (manual)"
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: http://localhost:8080
+    # ⚠️  Déclencher manuellement depuis l'UI GitHub Actions → "Re-run jobs"
+    #     ou via workflow_dispatch avec input
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy API container (CI-7)
+        env:
+          API_SECRET_KEY: ${{ secrets.API_SECRET_KEY }}
+          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+        run: |
+          docker pull ghcr.io/${{ github.repository }}/fraud-trainer:${{ github.sha }}
+          docker stop fraud-api || true
+          docker rm fraud-api || true
+          docker run -d \
+            --name fraud-api \
+            -p 8080:8080 \
+            -e MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI} \
+            -e API_SECRET_KEY=${API_SECRET_KEY} \
+            --restart unless-stopped \
+            ghcr.io/${{ github.repository }}/fraud-trainer:${{ github.sha }}
+          sleep 15
+          docker exec fraud-api curl -f http://localhost:8080/health
+
+  # ===========================================================================
+  # CI-8/CI-9 : Détection de drift (si données processsed disponibles)
+  # ===========================================================================
+  monitor:
+    name: "CI-9 · Drift Detection"
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        run: pip install uv --quiet
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Check if drift data exists
+        id: check_drift
+        run: |
+          if [ -f "data/processed/reference.parquet" ] && [ -f "data/processed/current.parquet" ]; then
+            echo "has_data=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_data=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run drift detection (CI-9)
+        if: steps.check_drift.outputs.has_data == 'true'
+        run: |
+          uv run python -m src.evaluation.drift_detector \
+            --reference data/processed/reference.parquet \
+            --current   data/processed/current.parquet \
+            --output    artifacts/drift_report.html \
+            --alert-threshold 0.20
+
+      - name: Upload drift report
+        if: steps.check_drift.outputs.has_data == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-report
+          path: artifacts/drift_report.html
+          retention-days: 14

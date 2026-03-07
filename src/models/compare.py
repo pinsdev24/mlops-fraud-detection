@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 # Core comparison logic
 # ---------------------------------------------------------------------------
 
+
 def get_champion_run(
     experiment_name: str,
     metric: str = "pr_auc",
@@ -100,7 +101,8 @@ def should_promote(
     if ref_val is None:
         logger.warning(
             "Metric '%s' not found in reference run %s — promoting new run by default.",
-            metric, reference_run_id,
+            metric,
+            reference_run_id,
         )
         return True
 
@@ -110,7 +112,11 @@ def should_promote(
     logger.info(
         "CI-5 Comparison | metric=%s | new=%.4f | champion=%.4f | "
         "min_required=%.4f | promoted=%s",
-        metric, new_val, ref_val, threshold, promoted,
+        metric,
+        new_val,
+        ref_val,
+        threshold,
+        promoted,
     )
 
     # Log comparison result back to the new run
@@ -145,18 +151,20 @@ def compare_all_runs(
     for run in runs:
         m = run.data.metrics
         p = run.data.params
-        leaderboard.append({
-            "run_id": run.info.run_id[:8],
-            "run_name": run.info.run_name,
-            "model": p.get("model_name", "?"),
-            "strategy": p.get("imbalance_strategy", "?"),
-            "pr_auc": m.get("pr_auc", None),
-            "roc_auc": m.get("roc_auc", None),
-            "f1_fraud": m.get("f1_fraud", None),
-            "recall_fraud": m.get("recall_fraud", None),
-            "precision_fraud": m.get("precision_fraud", None),
-            "threshold": m.get("threshold", None),
-        })
+        leaderboard.append(
+            {
+                "run_id": run.info.run_id[:8],
+                "run_name": run.info.run_name,
+                "model": p.get("model_name", "?"),
+                "strategy": p.get("imbalance_strategy", "?"),
+                "pr_auc": m.get("pr_auc", None),
+                "roc_auc": m.get("roc_auc", None),
+                "f1_fraud": m.get("f1_fraud", None),
+                "recall_fraud": m.get("recall_fraud", None),
+                "precision_fraud": m.get("precision_fraud", None),
+                "threshold": m.get("threshold", None),
+            }
+        )
 
     return leaderboard
 
@@ -194,6 +202,7 @@ def _fmt(v) -> str:
 # CLI (used by GitLab CI step CI-5)
 # ---------------------------------------------------------------------------
 
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="CI-5 — Automatic model comparison and promotion gate"
@@ -223,8 +232,6 @@ if __name__ == "__main__":
         print("No previous champion — new run is the reference. ✅")
         sys.exit(0)
 
-    promoted = should_promote(
-        args.new_run_id, champion.info.run_id, args.metric, args.tolerance
-    )
+    promoted = should_promote(args.new_run_id, champion.info.run_id, args.metric, args.tolerance)
     print(f"Promotion decision: {'✅ PROMOTED' if promoted else '❌ REJECTED'}")
     sys.exit(0 if promoted else 1)

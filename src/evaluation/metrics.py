@@ -46,7 +46,7 @@ def compute_all_metrics(
     tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
 
     metrics = {
-        "pr_auc": pr_auc,          # PRIMARY metric (AUPRC)
+        "pr_auc": pr_auc,  # PRIMARY metric (AUPRC)
         "roc_auc": roc_auc,
         "f1_fraud": f1,
         "precision_fraud": precision,
@@ -110,9 +110,7 @@ def find_optimal_threshold(
             return find_optimal_threshold(y_true, y_proba, strategy="f1")
         best_idx = np.argmax(recalls[:-1][mask])
         optimal = float(thresholds[mask][best_idx])
-        logger.info(
-            "Optimal threshold (Recall@P≥0.90 strategy): %.4f", optimal
-        )
+        logger.info("Optimal threshold (Recall@P≥0.90 strategy): %.4f", optimal)
 
     else:
         raise ValueError(f"Unknown threshold strategy: {strategy}")

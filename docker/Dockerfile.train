@@ -8,8 +8,10 @@ FROM python:3.11-slim
 
 # System deps: OpenMP (required by XGBoost on Linux)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libgomp1 \
-        git \
+    libgomp1 \
+    git \
+    curl \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -24,6 +26,7 @@ RUN pip install --no-cache-dir uv \
 # Copy source code
 COPY src/ ./src/
 COPY configs/ ./configs/
+COPY download_data.sh ./
 
 # Create directories that may be needed at runtime
 RUN mkdir -p data/raw data/processed artifacts

@@ -13,10 +13,10 @@ from src.preprocessing.features import (
     compute_class_weight_ratio,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def raw_df():
@@ -46,6 +46,7 @@ def X_train_y_train(raw_df):
 # Tests — cleaner
 # ---------------------------------------------------------------------------
 
+
 class TestCleaner:
     def test_clean_drops_duplicates_by_default(self, df_with_duplicates):
         df_clean = clean_data(df_with_duplicates, drop_duplicates=True)
@@ -67,7 +68,7 @@ class TestCleaner:
     def test_split_features_target_shapes(self, raw_df):
         df_clean = clean_data(raw_df)
         X, y = split_features_target(df_clean)
-        assert X.shape[1] == 30      # 28 PCA + Amount + Time
+        assert X.shape[1] == 30  # 28 PCA + Amount + Time
         assert len(y) == len(X)
         assert set(y.unique()).issubset({0, 1})
 
@@ -108,6 +109,7 @@ class TestTrainValTestSplit:
 # Tests — features / preprocessing
 # ---------------------------------------------------------------------------
 
+
 class TestPreprocessor:
     def test_build_preprocessor_returns_column_transformer(self):
         prep = build_preprocessor()
@@ -119,8 +121,8 @@ class TestPreprocessor:
         X_transformed = prep.fit_transform(X_train)
         # Amount and Time should now have ~0 mean and ~1 std
         # (they are the first 2 columns in the transformer output)
-        assert abs(X_transformed[:, 0].mean()) < 0.5   # Amount scaled
-        assert abs(X_transformed[:, 1].mean()) < 0.5   # Time scaled
+        assert abs(X_transformed[:, 0].mean()) < 0.5  # Amount scaled
+        assert abs(X_transformed[:, 1].mean()) < 0.5  # Time scaled
 
     def test_preprocessor_output_shape(self, X_train_y_train):
         X_train, _ = X_train_y_train
