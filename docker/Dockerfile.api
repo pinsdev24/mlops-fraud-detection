@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY pyproject.toml uv.lock README.md ./
-RUN pip install --no-cache-dir uv && uv sync --frozen --no-dev
+RUN pip install --no-cache-dir uv && uv sync --frozen --no-dev --no-editable
 
 COPY src/ ./src/
 COPY api/ ./api/
@@ -24,10 +24,9 @@ ENV PYTHONUNBUFFERED=1
 ENV MODEL_NAME=fraud-detector-xgboost
 ENV MODEL_STAGE=Production
 
-# Security: run as non-root
-RUN useradd --create-home appuser
+RUN useradd --create-home appuser && chown -R appuser:appuser /app
 USER appuser
 
 EXPOSE 8080
-ENTRYPOINT ["uv", "run", "uvicorn", "api.main:app"]
+ENTRYPOINT ["/app/.venv/bin/uvicorn", "api.main:app"]
 CMD ["--host", "0.0.0.0", "--port", "8080"]
